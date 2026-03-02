@@ -18,7 +18,6 @@ import sys
 sys.path.insert(0, './hy3dshape')
 sys.path.insert(0, './hy3dpaint')
 
-
 try:
     from torchvision_fix import apply_fix
     apply_fix()
@@ -26,6 +25,8 @@ except ImportError:
     print("Warning: torchvision_fix module not found, proceeding without compatibility fix")
 except Exception as e:
     print(f"Warning: Failed to apply torchvision fix: {e}")
+
+from vram_manager import init_vram_manager, get_vram_manager
 
 
 import os
@@ -747,8 +748,17 @@ if __name__ == '__main__':
     parser.add_argument('--enable_flashvdm', action='store_true')
     parser.add_argument('--compile', action='store_true')
     parser.add_argument('--low_vram_mode', action='store_true')
+    parser.add_argument('--precision', type=str, default='auto',
+                        choices=['auto', 'full', 'half'],
+                        help='Precision mode: auto detects from VRAM tier')
+    parser.add_argument('--vram_tier', type=str, default='auto',
+                        choices=['auto', 'high', 'medium', 'low'],
+                        help='VRAM tier override: auto detects from GPU')
     args = parser.parse_args()
-    
+
+    # Initialize VRAMManager before any pipeline loading
+    vm = init_vram_manager(precision=args.precision, vram_tier=args.vram_tier)
+
     SAVE_DIR = args.cache_path
     os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -796,7 +806,9 @@ if __name__ == '__main__':
             #     texgen_worker.enable_model_cpu_offload()
 
             from hy3dpaint.textureGenPipeline import Hunyuan3DPaintPipeline, Hunyuan3DPaintConfig
-            conf = Hunyuan3DPaintConfig(max_num_view=8, resolution=768)
+            _max_views, _resolution = vm.texture_config
+            print(f"Texture config: {_max_views} views @ {_resolution}px (tier={vm.tier})")
+            conf = Hunyuan3DPaintConfig(max_num_view=_max_views, resolution=_resolution)
             conf.realesrgan_ckpt_path = "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
             conf.multiview_cfg_path = "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
             conf.custom_pipeline = "hy3dpaint/hunyuanpaintpbr"
@@ -858,7 +870,7 @@ if __name__ == '__main__':
     app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
     shutil.copytree('./assets/env_maps', os.path.join(static_dir, 'env_maps'), dirs_exist_ok=True)
 
-    if args.low_vram_mode:
+    if args.low_vram_mode or vm.use_model_swapping:
         torch.cuda.empty_cache()
     demo = build_app()
     app = gr.mount_gradio_app(app, demo, path="/")

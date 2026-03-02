@@ -36,10 +36,11 @@ from fastapi.responses import JSONResponse, FileResponse
 from api_models import GenerationRequest, GenerationResponse, StatusResponse, HealthResponse
 from logger_utils import build_logger
 from constants import (
-    SERVER_ERROR_MSG, DEFAULT_SAVE_DIR, API_TITLE, API_DESCRIPTION, 
+    SERVER_ERROR_MSG, DEFAULT_SAVE_DIR, API_TITLE, API_DESCRIPTION,
     API_VERSION, API_CONTACT, API_LICENSE_INFO, API_TAGS_METADATA
 )
 from model_worker import ModelWorker
+from vram_manager import init_vram_manager
 
 # Global variables
 SAVE_DIR = DEFAULT_SAVE_DIR
@@ -204,14 +205,22 @@ if __name__ == "__main__":
     parser.add_argument('--enable_flashvdm', action='store_true')
     parser.add_argument('--compile', action='store_true')
     parser.add_argument('--low_vram_mode', action='store_true')
+    parser.add_argument('--precision', type=str, default='auto',
+                        choices=['auto', 'full', 'half'],
+                        help='Precision mode: auto detects from VRAM tier')
+    parser.add_argument('--vram_tier', type=str, default='auto',
+                        choices=['auto', 'high', 'medium', 'low'],
+                        help='VRAM tier override: auto detects from GPU')
     parser.add_argument('--cache-path', type=str, default='./gradio_cache')
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
+    # Initialize VRAMManager before any pipeline loading
+    vm = init_vram_manager(precision=args.precision, vram_tier=args.vram_tier)
+
     # Update SAVE_DIR based on cache-path argument
     SAVE_DIR = args.cache_path
     os.makedirs(SAVE_DIR, exist_ok=True)
-    
 
     model_semaphore = asyncio.Semaphore(args.limit_model_concurrency)
 
