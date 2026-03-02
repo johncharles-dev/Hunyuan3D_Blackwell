@@ -31,6 +31,16 @@ from .models.autoencoders import ShapeVAE
 from .models.autoencoders import SurfaceExtractors
 from .utils import logger, synchronize_timer, smart_load_model
 
+# Dynamic dtype: try to use VRAMManager if available
+def _get_auto_dtype():
+    try:
+        import sys
+        # vram_manager lives in project root, which callers add to sys.path
+        from vram_manager import get_vram_manager
+        return get_vram_manager().dtype
+    except (ImportError, Exception):
+        return torch.float16
+
 
 def retrieve_timesteps(
     scheduler,
@@ -197,12 +207,15 @@ class Hunyuan3DDiTPipeline:
         cls,
         model_path,
         device='cuda',
-        dtype=torch.float16,
+        dtype=None,
         use_safetensors=False,
         variant='fp16',
         subfolder='hunyuan3d-dit-v2-1',
         **kwargs,
     ):
+        if dtype is None:
+            dtype = _get_auto_dtype()
+            logger.info(f"Auto-selected dtype: {dtype}")
         kwargs['from_pretrained_kwargs'] = dict(
             model_path=model_path,
             subfolder=subfolder,

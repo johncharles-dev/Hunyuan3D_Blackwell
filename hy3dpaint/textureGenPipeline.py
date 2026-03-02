@@ -35,8 +35,8 @@ diffusers_logging.set_verbosity(50)
 
 
 class Hunyuan3DPaintConfig:
-    def __init__(self, max_num_view, resolution):
-        self.device = "cuda"
+    def __init__(self, max_num_view, resolution, device="cuda"):
+        self.device = device
 
         self.multiview_cfg_path = "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
         self.custom_pipeline = "hunyuanpaintpbr"
