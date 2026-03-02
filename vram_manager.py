@@ -7,9 +7,12 @@ class VRAMManager:
     Auto-detect GPU VRAM and set behavior tier for Hunyuan3D pipeline.
 
     Tiers:
-        high   (>=24GB): float32, all models on GPU, no swapping
-        medium (12-23GB): float16, model swapping between shape/texture stages
-        low    (8-11GB):  float16, aggressive swapping, reduced texture views, CPU rembg
+        high   (>=24GB): float16, best texture quality (9 views @ 1024px)
+        medium (12-23GB): float16, balanced texture quality (8 views @ 768px)
+        low    (8-11GB):  float16, reduced texture quality (6 views @ 512px), CPU rembg
+
+    Note: Model swapping between shape/texture stages is ALWAYS required.
+    Shape (~7GB) + texture (~26GB) = 33GB exceeds even 32GB GPUs.
     """
 
     TIER_HIGH = 'high'
@@ -66,7 +69,8 @@ class VRAMManager:
 
     @property
     def use_model_swapping(self) -> bool:
-        return self._tier != self.TIER_HIGH
+        # Always swap: shape (~7GB) + texture (~26GB) exceeds even 32GB GPUs
+        return True
 
     @property
     def rembg_provider(self) -> str:

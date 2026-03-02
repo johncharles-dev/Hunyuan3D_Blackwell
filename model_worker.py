@@ -251,8 +251,10 @@ class ModelWorker:
 
         except Exception as e:
             logger.error(f"Texture generation failed: {e}")
-            # Fall back to untextured mesh if texture generation fails
-            final_save_path = initial_save_path
+            # Fall back to untextured mesh — copy to _textured.glb so status endpoint sees completion
+            final_save_path = os.path.join(self.save_dir, f'{str(uid)}_textured.glb')
+            import shutil
+            shutil.copy2(initial_save_path, final_save_path)
             logger.warning(f"Using untextured mesh as fallback: {final_save_path}")
 
         # === Restore: texture -> shape for next request ===
