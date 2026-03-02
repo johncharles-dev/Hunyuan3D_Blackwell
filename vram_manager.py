@@ -49,11 +49,8 @@ class VRAMManager:
             return torch.float32
         elif precision == 'half':
             return torch.float16
-        else:  # auto
-            if self._tier == self.TIER_HIGH:
-                return torch.float32
-            else:
-                return torch.float16
+        else:  # auto — Hunyuan3D models are trained in float16, use it everywhere
+            return torch.float16
 
     @property
     def tier(self) -> str:
