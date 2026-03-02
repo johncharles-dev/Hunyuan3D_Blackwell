@@ -35,7 +35,9 @@ from .utils import logger, synchronize_timer, smart_load_model
 def _get_auto_dtype():
     try:
         import sys
-        # vram_manager lives in project root, which callers add to sys.path
+        # Check if already imported by caller (most reliable path)
+        if 'vram_manager' in sys.modules:
+            return sys.modules['vram_manager'].get_vram_manager().dtype
         from vram_manager import get_vram_manager
         return get_vram_manager().dtype
     except (ImportError, Exception):

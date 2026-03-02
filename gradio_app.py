@@ -378,11 +378,35 @@ def generation_all(
 
     tmp_time = time.time()
 
+    # Model swap: offload shape pipeline before texture generation
+    global tex_pipeline
+    if vm.use_model_swapping:
+        logger.info("  Swapping: offloading shape pipeline to CPU...")
+        torch.cuda.synchronize()
+        i23d_worker.model.to('cpu')
+        i23d_worker.vae.to('cpu')
+        i23d_worker.conditioner.to('cpu')
+        torch.cuda.empty_cache()
+        if tex_pipeline is None:
+            logger.info("  Swapping: loading texture pipeline to GPU...")
+            tex_pipeline = Hunyuan3DPaintPipeline(_tex_conf)
+
     text_path = os.path.join(save_folder, f'textured_mesh.obj')
     path_textured = tex_pipeline(mesh_path=path, image_path=image, output_mesh_path=text_path, save_glb=False)
-        
+
     logger.info("---Texture Generation takes %s seconds ---" % (time.time() - tmp_time))
     stats['time']['texture generation'] = time.time() - tmp_time
+
+    # Model swap: restore shape pipeline after texture generation
+    if vm.use_model_swapping:
+        logger.info("  Swapping: restoring shape pipeline to GPU...")
+        torch.cuda.synchronize()
+        del tex_pipeline
+        tex_pipeline = None
+        torch.cuda.empty_cache()
+        i23d_worker.model.to(args.device)
+        i23d_worker.vae.to(args.device)
+        i23d_worker.conditioner.to(args.device)
 
     tmp_time = time.time()
     # Convert textured OBJ to GLB using obj2gltf with PBR support
@@ -392,10 +416,10 @@ def generation_all(
     logger.info("---Convert textured OBJ to GLB takes %s seconds ---" % (time.time() - tmp_time))
     stats['time']['convert textured OBJ to GLB'] = time.time() - tmp_time
     stats['time']['total'] = time.time() - start_time_0
-    model_viewer_html_textured = build_model_viewer_html(save_folder, 
-                                                         height=HTML_HEIGHT, 
+    model_viewer_html_textured = build_model_viewer_html(save_folder,
+                                                         height=HTML_HEIGHT,
                                                          width=HTML_WIDTH, textured=True)
-    if args.low_vram_mode:
+    if args.low_vram_mode or vm.use_model_swapping:
         torch.cuda.empty_cache()
     return (
         gr.update(value=path),
@@ -808,19 +832,18 @@ if __name__ == '__main__':
             from hy3dpaint.textureGenPipeline import Hunyuan3DPaintPipeline, Hunyuan3DPaintConfig
             _max_views, _resolution = vm.texture_config
             print(f"Texture config: {_max_views} views @ {_resolution}px (tier={vm.tier})")
-            conf = Hunyuan3DPaintConfig(max_num_view=_max_views, resolution=_resolution)
-            conf.realesrgan_ckpt_path = "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
-            conf.multiview_cfg_path = "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
-            conf.custom_pipeline = "hy3dpaint/hunyuanpaintpbr"
-            tex_pipeline = Hunyuan3DPaintPipeline(conf)
-        
-            # Not help much, ignore for now.
-            # if args.compile:
-            #     texgen_worker.models['delight_model'].pipeline.unet.compile()
-            #     texgen_worker.models['delight_model'].pipeline.vae.compile()
-            #     texgen_worker.models['multiview_model'].pipeline.unet.compile()
-            #     texgen_worker.models['multiview_model'].pipeline.vae.compile()
-            
+            _tex_conf = Hunyuan3DPaintConfig(max_num_view=_max_views, resolution=_resolution)
+            _tex_conf.realesrgan_ckpt_path = "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
+            _tex_conf.multiview_cfg_path = "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
+            _tex_conf.custom_pipeline = "hy3dpaint/hunyuanpaintpbr"
+
+            if vm.use_model_swapping:
+                # Defer texture pipeline — load on first use to avoid OOM at startup
+                tex_pipeline = None
+                print(f"  Model swapping enabled: texture pipeline deferred until first use")
+            else:
+                tex_pipeline = Hunyuan3DPaintPipeline(_tex_conf)
+
             HAS_TEXTUREGEN = True
             
         except Exception as e:

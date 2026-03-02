@@ -155,12 +155,14 @@ class ModelWorker:
         }
 
     def _offload_shape_pipeline(self):
-        """Move shape pipeline to CPU and free VRAM for texture stage."""
+        """Move entire shape pipeline (model + VAE + conditioner) to CPU and free VRAM."""
         if not self.vm.use_model_swapping:
             return
         logger.info("  Swapping: offloading shape pipeline to CPU...")
         torch.cuda.synchronize()
         self.pipeline.model.to('cpu')
+        self.pipeline.vae.to('cpu')
+        self.pipeline.conditioner.to('cpu')
         torch.cuda.empty_cache()
 
     def _load_texture_pipeline(self):
@@ -170,7 +172,7 @@ class ModelWorker:
             self.paint_pipeline = Hunyuan3DPaintPipeline(self._paint_conf)
 
     def _restore_shape_pipeline(self):
-        """Move shape pipeline back to GPU after texture stage completes."""
+        """Move entire shape pipeline back to GPU after texture stage completes."""
         if not self.vm.use_model_swapping:
             return
         logger.info("  Swapping: restoring shape pipeline to GPU...")
@@ -181,6 +183,8 @@ class ModelWorker:
             self.paint_pipeline = None
             torch.cuda.empty_cache()
         self.pipeline.model.to(self.device)
+        self.pipeline.vae.to(self.device)
+        self.pipeline.conditioner.to(self.device)
 
     @torch.inference_mode()
     def generate(self, uid, params):
